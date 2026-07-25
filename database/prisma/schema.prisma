@@ -8,7 +8,7 @@ generator client {
 
 generator clientApi {
   provider        = "prisma-client-js"
-  output          = "../../siakad-api/node_modules/.prisma/client"
+  output          = "../../node_modules/.prisma/client"
   previewFeatures = ["driverAdapters"]
 }
 
