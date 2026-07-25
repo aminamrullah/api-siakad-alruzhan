@@ -1,0 +1,731 @@
+// Prisma Schema for Al-Ruzhan (SIAKAD & LMS)
+// SINGLE SOURCE OF TRUTH — Semua migrasi dijalankan dari folder database/
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+generator clientApi {
+  provider        = "prisma-client-js"
+  output          = "../../siakad-api/node_modules/.prisma/client"
+  previewFeatures = ["driverAdapters"]
+}
+
+generator clientLms {
+  provider        = "prisma-client-js"
+  output          = "../../lms-api/node_modules/.prisma/client"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==========================================
+// CORE SCHEMA (SSO, Users & Roles)
+// ==========================================
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  roleId    String
+  role      Role     @relation(fields: [roleId], references: [id])
+  
+  // Relations
+  mahasiswa Mahasiswa?
+  dosen     Dosen?
+  pegawai   Pegawai?
+  
+  pesanTerkirim Pesan[] @relation("Pengirim")
+  pesanDiterima Pesan[] @relation("Penerima")
+  diskusiMateri DiskusiMateri[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  name        String   @unique // e.g., SUPERADMIN, BAAK, BAKU, DOSEN_BIASA, KAPRODI, DOSEN_WALI, DOSEN_PEMBIMBING, MAHASISWA
+  permissions String[] // Array of permissions (e.g., 'manage_users', 'view_grades')
+  users       User[]
+}
+
+// ==========================================
+// SIAKAD SCHEMA (Administrasi & Akademik)
+// ==========================================
+
+model TahunAkademik {
+  id            String   @id @default(uuid())
+  kode          String   @unique // e.g. "20231"
+  nama          String   // e.g. "Ganjil 2023/2024"
+  tahun         String   // e.g. "2023/2024"
+  semester      String   // "GANJIL", "GENAP", "PENDEK"
+  isAktif       Boolean  @default(false)
+  
+  jadwalKuliah  JadwalKuliah[]
+  krs           Krs[]
+  statusKrs     StatusKrsMahasiswa[]
+  cuti          Cuti[]
+  asdos         Asdos[]
+  tagihan       Tagihan[]
+  kalender      KalenderAkademik[]
+  beasiswa      Beasiswa[]
+  pengaturanPMB PengaturanPMB[]
+}
+
+model Mahasiswa {
+  id          String   @id @default(uuid())
+  nim         String   @unique
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  prodiId     String
+  prodi       Prodi    @relation(fields: [prodiId], references: [id])
+  status      String   @default("AKTIF") // AKTIF, CUTI, LULUS, DO
+  
+  // PDDIKTI Biodata
+  nik               String?  @unique
+  nisn              String?
+  jenisKelamin      String?  // L atau P
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  agama             String?
+  namaIbuKandung    String?
+  kewarganegaraan   String   @default("ID")
+  alamat            String?
+  hp                String?
+  
+  // PMB Integration
+  jalurMasuk        String?
+  gelombang         String?
+  tanggalMasuk      DateTime?
+  
+  orangTuaId        String?
+  orangTua          OrangTua? @relation(fields: [orangTuaId], references: [id])
+  
+  dosenWaliId       String?
+  dosenWali         Dosen?    @relation("DosenWali", fields: [dosenWaliId], references: [id])
+  
+  krs         Krs[]
+  tagihan     Tagihan[]
+  alumni      Alumni?
+  asdos       Asdos[]
+  cuti        Cuti[]
+  pendaftaranKegiatan PendaftaranKegiatan[]
+  skripsi     Skripsi[]
+  skripsiLogbook SkripsiLogbook[]
+  kehadiran   KehadiranMahasiswa[]
+  
+  angkatan    String?
+  statusKrs   StatusKrsMahasiswa[]
+  beasiswa    Beasiswa[]
+  yudisium    Yudisium?
+  skpi        SKPI[]
+  edom        KuesionerEdom[]
+  dispensasi  PengajuanDispensasi[]
+}
+
+model CalonMahasiswa {
+  id              String   @id @default(uuid())
+  nomorPendaftaran String   @unique
+  namaLengkap     String
+  nik             String   @unique
+  email           String   @unique
+  hp              String
+  asalSekolah     String
+  jalurMasuk      String   // REGULER, PRESTASI, dll.
+  
+  gelombang       String?  // Gelombang 1, 2, dst. (Backward compatibility)
+  pengaturanPmbId String?
+  pengaturanPmb   PengaturanPMB? @relation(fields: [pengaturanPmbId], references: [id])
+  
+  prodiPilihan1Id String
+  prodiPilihan1   Prodi    @relation("ProdiPilihan1", fields: [prodiPilihan1Id], references: [id])
+  prodiPilihan2Id String?
+  prodiPilihan2   Prodi?   @relation("ProdiPilihan2", fields: [prodiPilihan2Id], references: [id])
+  status          String   @default("MENUNGGU") // MENUNGGU, LULUS, TIDAK_LULUS
+  
+  statusPembayaran String  @default("BELUM_BAYAR") // BELUM_BAYAR, MENUNGGU_VERIFIKASI, LUNAS
+  buktiPembayaran  String?
+  
+  tanggalDaftar   DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PengaturanPMB {
+  id               String   @id @default(uuid())
+  tahunAkademikId  String
+  tahunAkademik    TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  namaGelombang    String
+  tanggalBuka      DateTime
+  tanggalTutup     DateTime
+  biayaPendaftaran Float    @default(0)
+  isAktif          Boolean  @default(true)
+  
+  calonMahasiswa   CalonMahasiswa[]
+}
+
+model Dosen {
+  id          String   @id @default(uuid())
+  nidn        String   @unique
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  homebaseId  String
+  homebase    Prodi    @relation(fields: [homebaseId], references: [id])
+  
+  // PDDIKTI Biodata
+  nik               String?  @unique
+  jenisKelamin      String?
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  agama             String?
+  hp                String?
+  
+  // Kepegawaian Dosen
+  statusIkatanKerja String?
+  statusAktivitas   String?
+  jabatanAkademik   String?
+  pendidikanTerakhir String?
+
+  mataKuliah  JadwalKuliah[]
+  asdos       Asdos[]
+  skripsiSebagaiPembimbing1 Skripsi[] @relation("Pembimbing1")
+  skripsiSebagaiPembimbing2 Skripsi[] @relation("Pembimbing2")
+  skripsiSebagaiPenguji1    SkripsiUjian[] @relation("Penguji1")
+  skripsiSebagaiPenguji2    SkripsiUjian[] @relation("Penguji2")
+  logbookValidasi           SkripsiLogbook[]
+  edom        KuesionerEdom[]
+  mahasiswaPerwalian Mahasiswa[] @relation("DosenWali")
+}
+
+model Pegawai {
+  id          String   @id @default(uuid())
+  nip         String?  @unique
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id])
+  divisi      String   // BAAK, BAKU, dll.
+  
+  // PDDIKTI / HR Biodata
+  nik               String?  @unique
+  jenisKelamin      String?
+  tempatLahir       String?
+  tanggalLahir      DateTime?
+  agama             String?
+  hp                String?
+  
+  // Kepegawaian
+  jabatan           String?
+  statusPegawai     String?
+}
+
+model Prodi {
+  id          String   @id @default(uuid())
+  kode        String   @unique
+  nama        String
+  fakultas    String
+  
+  mahasiswa   Mahasiswa[]
+  dosen       Dosen[]
+  kurikulum   Kurikulum[]
+  komponenBiaya KomponenBiaya[]
+  calonPilihan1 CalonMahasiswa[] @relation("ProdiPilihan1")
+  calonPilihan2 CalonMahasiswa[] @relation("ProdiPilihan2")
+}
+
+model MataKuliah {
+  id          String   @id @default(uuid())
+  kode        String   @unique
+  nama        String
+  sks         Int
+  
+  jadwal      JadwalKuliah[]
+  asdos       Asdos[]
+  kurikulum   KurikulumMataKuliah[]
+  edom        KuesionerEdom[]
+}
+
+model Ruangan {
+  id          String   @id @default(uuid())
+  kode        String   @unique
+  nama        String
+  kapasitas   Int
+  lokasi      String?
+  
+  jadwal      JadwalKuliah[]
+}
+
+model JadwalKuliah {
+  id          String   @id @default(uuid())
+  tahunAkademikId String
+  tahunAkademik TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  mataKuliahId String
+  mataKuliah  MataKuliah @relation(fields: [mataKuliahId], references: [id])
+  dosenId     String
+  dosen       Dosen      @relation(fields: [dosenId], references: [id])
+  ruanganId   String
+  ruanganObj  Ruangan    @relation(fields: [ruanganId], references: [id])
+  hari        String
+  waktuMulai  String
+  waktuSelesai String
+  
+  krs         Krs[]
+  materiLms   MateriLms[] // Link ke LMS
+  agenda      AgendaPerkuliahan[]
+}
+
+model Krs {
+  id          String   @id @default(uuid())
+  mahasiswaId String
+  mahasiswa   Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  jadwalId    String
+  jadwal      JadwalKuliah @relation(fields: [jadwalId], references: [id])
+  nilaiAbsensi Float?
+  nilaiTugas  Float?
+  nilaiUts    Float?
+  nilaiUas    Float?
+  nilaiAkhir  Float?
+  grade       String?
+  tahunAkademikId String
+  tahunAkademik TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  status      String   @default("MENUNGGU") // MENUNGGU, DISETUJUI, DITOLAK
+  catatanWali String?
+}
+
+model StatusKrsMahasiswa {
+  id              String   @id @default(uuid())
+  mahasiswaId     String
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  tahunAkademikId String
+  tahunAkademik   TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  isKeuanganDibuka Boolean @default(false)
+  statusPengajuan String   @default("DRAFT") // DRAFT, DIAJUKAN, DISETUJUI, DITOLAK
+  catatanWali     String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  @@unique([mahasiswaId, tahunAkademikId])
+}
+
+model AgendaPerkuliahan {
+  id              String   @id @default(uuid())
+  jadwalId        String
+  jadwal          JadwalKuliah @relation(fields: [jadwalId], references: [id])
+  pertemuanKe     Int
+  tanggal         DateTime
+  topik           String
+  status          String   @default("SELESAI")
+  absenBatasWaktu DateTime?
+  
+  kehadiran   KehadiranMahasiswa[]
+}
+
+model KehadiranMahasiswa {
+  id          String   @id @default(uuid())
+  agendaId    String
+  agenda      AgendaPerkuliahan @relation(fields: [agendaId], references: [id])
+  mahasiswaId String
+  mahasiswa   Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  status      String   // HADIR, IZIN, SAKIT, ALPA
+  
+  @@unique([agendaId, mahasiswaId])
+}
+
+// SIAKAD SCHEMA (Keuangan/BAKU)
+model KomponenBiaya {
+  id              String   @id @default(uuid())
+  jenis           String   // SPP, SPI, PRAKTIKUM, WISUDA
+  nama            String   // e.g. "SPP Semester 1"
+  nominal         Float
+  prodiId         String?  // Jika null, berlaku untuk semua prodi
+  prodi           Prodi?   @relation(fields: [prodiId], references: [id])
+  angkatan        String?  // Jika null, berlaku untuk semua angkatan
+  jalurMasuk      String?  // Jika null, berlaku untuk semua jalur masuk
+  
+  tagihan         Tagihan[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Tagihan {
+  id              String   @id @default(uuid())
+  tahunAkademikId String?
+  tahunAkademik   TahunAkademik? @relation(fields: [tahunAkademikId], references: [id])
+  mahasiswaId     String
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  komponenBiayaId String?
+  komponenBiaya   KomponenBiaya? @relation(fields: [komponenBiayaId], references: [id])
+  jenis           String   // SPP, SKS, Praktikum, dll.
+  jumlah          Float
+  sisaTagihan     Float    @default(0) // Untuk memantau sisa setelah cicilan/parsial
+  status          String   @default("BELUM_LUNAS") // LUNAS, BELUM_LUNAS, CICILAN, DIBATALKAN
+  jatuhTempo      DateTime
+  
+  pembayaran      Pembayaran[]
+  dispensasi      PengajuanDispensasi[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model PengajuanDispensasi {
+  id              String   @id @default(uuid())
+  tagihanId       String
+  tagihan         Tagihan  @relation(fields: [tagihanId], references: [id])
+  mahasiswaId     String
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  alasan          String
+  dokumenPendukung String?
+  status          String   @default("DIAJUKAN") // DIAJUKAN, DISETUJUI, DITOLAK
+  catatanAdmin    String?
+  rencanaBayar    DateTime? // Kapan janji akan dilunasi
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// SIAKAD SCHEMA (PDDIKTI Sync Framework)
+model PddiktiSyncLog {
+  id          String   @id @default(uuid())
+  entityType  String   // e.g., 'MAHASISWA', 'NILAI'
+  status      String   // SUCCESS, FAILED
+  message     String?
+  syncDate    DateTime @default(now())
+}
+
+// ==========================================
+// LMS SCHEMA (Pembelajaran)
+// ==========================================
+
+model MateriLms {
+  id          String   @id @default(uuid())
+  jadwalId    String
+  jadwal      JadwalKuliah @relation(fields: [jadwalId], references: [id])
+  judul       String
+  deskripsi   String?
+  tipe        String   // PDF, YOUTUBE, TUGAS, KUIS
+  urlMateri   String?  // Link ke file S3/Local atau ID Youtube
+  batasWaktu  DateTime? // Batas waktu untuk pengumpulan tugas
+  
+  tugas       PengumpulanTugas[]
+  diskusi     DiskusiMateri[]
+}
+
+model DiskusiMateri {
+  id          String   @id @default(uuid())
+  materiId    String
+  materi      MateriLms @relation(fields: [materiId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  pesan       String
+  createdAt   DateTime @default(now())
+}
+
+model PengumpulanTugas {
+  id          String   @id @default(uuid())
+  materiId    String
+  materi      MateriLms @relation(fields: [materiId], references: [id])
+  mahasiswaId String
+  fileUrl     String
+  nilai       Float?
+  feedback    String?
+  dikumpulkanPada DateTime @default(now())
+}
+
+// ==========================================
+// MASTER DATA TAMBAHAN (Orang Tua, Alumni, Asdos)
+// ==========================================
+
+model OrangTua {
+  id          String   @id @default(uuid())
+  nik         String?  @unique
+  namaLengkap String
+  hubungan    String   // AYAH, IBU, WALI
+  pekerjaan   String?
+  penghasilan String?
+  alamat      String?
+  hp          String?
+  email       String?
+
+  mahasiswa   Mahasiswa[]
+}
+
+model Alumni {
+  id              String   @id @default(uuid())
+  mahasiswaId     String   @unique
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  tahunLulus      String
+  ipk             Float?
+  pekerjaanSaatIni String?
+  instansi        String?
+  kontak          String?
+  tracerStudy     TracerStudy?
+}
+
+model Asdos {
+  id          String   @id @default(uuid())
+  mahasiswaId String
+  mahasiswa   Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  mataKuliahId String
+  mataKuliah  MataKuliah @relation(fields: [mataKuliahId], references: [id])
+  dosenId     String
+  dosen       Dosen      @relation(fields: [dosenId], references: [id])
+  tahunAkademikId String
+  tahunAkademik TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  aktif       Boolean    @default(true)
+}
+
+// ==========================================
+// KURIKULUM & AKADEMIK (MODUL 2)
+// ==========================================
+
+model Kurikulum {
+  id          String   @id @default(uuid())
+  nama        String   // e.g. Kurikulum Merdeka 2024
+  tahunMulai  String   // e.g. 2024
+  statusAktif Boolean  @default(true)
+  prodiId     String
+  prodi       Prodi    @relation(fields: [prodiId], references: [id])
+  
+  mataKuliah  KurikulumMataKuliah[]
+}
+
+model KurikulumMataKuliah {
+  id            String     @id @default(uuid())
+  kurikulumId   String
+  kurikulum     Kurikulum  @relation(fields: [kurikulumId], references: [id])
+  mataKuliahId  String
+  mataKuliah    MataKuliah @relation(fields: [mataKuliahId], references: [id])
+  semesterTujuan Int       // e.g. Semester 1, 2, 3
+  wajib         Boolean    @default(true)
+
+  @@unique([kurikulumId, mataKuliahId])
+}
+
+model KalenderAkademik {
+  id              String   @id @default(uuid())
+  tahunAkademikId String
+  tahunAkademik   TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  kegiatan        String   // e.g. Masa KRS, Ujian Tengah Semester
+  tanggalMulai    DateTime
+  tanggalSelesai  DateTime
+  keterangan      String?
+}
+
+// ==========================================
+// STUDENT ADMINISTRATION (MODUL 4)
+// ==========================================
+
+model Cuti {
+  id                String   @id @default(uuid())
+  mahasiswaId       String
+  mahasiswa         Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  tahunAkademikId   String
+  tahunAkademik     TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  alasan            String
+  dokumenPendukung  String?  // URL to document
+  status            String   @default("MENUNGGU") // MENUNGGU, DISETUJUI, DITOLAK
+  tanggalPengajuan  DateTime @default(now())
+}
+
+model Kegiatan {
+  id                  String   @id @default(uuid())
+  nama                String
+  jenisKegiatan       String   // e.g., SEMINAR, WORKSHOP, LOMBA
+  tanggalPelaksanaan  DateTime
+  batasPendaftaran    DateTime
+  kuota               Int?
+  
+  pendaftaran         PendaftaranKegiatan[]
+}
+
+model PendaftaranKegiatan {
+  id          String   @id @default(uuid())
+  kegiatanId  String
+  kegiatan    Kegiatan @relation(fields: [kegiatanId], references: [id])
+  mahasiswaId String
+  mahasiswa   Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  status      String   @default("TERDAFTAR") // TERDAFTAR, HADIR, BATAL
+  tanggalDaftar DateTime @default(now())
+
+  @@unique([kegiatanId, mahasiswaId])
+}
+
+model Skripsi {
+  id                String   @id @default(uuid())
+  mahasiswaId       String
+  mahasiswa         Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  judul             String
+  abstrak           String?
+  proposalFileUrl   String?  // URL berkas proposal
+  
+  pembimbing1Id     String?
+  pembimbing1       Dosen?   @relation("Pembimbing1", fields: [pembimbing1Id], references: [id])
+  
+  pembimbing2Id     String?
+  pembimbing2       Dosen?   @relation("Pembimbing2", fields: [pembimbing2Id], references: [id])
+  
+  // Status lifecycle: PENGAJUAN -> JUDUL_DISETUJUI -> BIMBINGAN -> SEMINAR_PROPOSAL -> SIDANG_AKHIR -> REVISI -> BEBAS_PUSTAKA -> SELESAI
+  // Rejection: DITOLAK
+  status            String   @default("PENGAJUAN")
+  catatanKaprodi    String?  // Catatan approval/penolakan dari Kaprodi
+  tanggalPengajuan  DateTime @default(now())
+  nilaiAkhir        Float?   // Nilai numerik hasil sidang
+  grade             String?  // A, B+, B, C+ dst
+  tanggalLulus      DateTime?
+  
+  logbooks          SkripsiLogbook[]
+  ujian             SkripsiUjian[]
+  dokumenFinal      SkripsiDokumenFinal?
+}
+
+model SkripsiLogbook {
+  id                  String   @id @default(uuid())
+  skripsiId           String
+  skripsi             Skripsi  @relation(fields: [skripsiId], references: [id])
+  mahasiswaId         String
+  mahasiswa           Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  dosenId             String?  // Dosen yang memvalidasi
+  dosen               Dosen?   @relation(fields: [dosenId], references: [id])
+  tanggal             DateTime @default(now())
+  catatanMahasiswa    String   // Deskripsi topik / progres bab
+  catatanDosen        String?  // Feedback dari dosen
+  status              String   @default("MENUNGGU") // MENUNGGU, DIVALIDASI, REVISI
+  createdAt           DateTime @default(now())
+}
+
+model SkripsiUjian {
+  id              String   @id @default(uuid())
+  skripsiId       String
+  skripsi         Skripsi  @relation(fields: [skripsiId], references: [id])
+  tipe            String   // SEMINAR_PROPOSAL, SIDANG_AKHIR
+  tanggal         DateTime?
+  ruangan         String?  // Nama ruangan atau 'Online'
+  linkZoom        String?  // Untuk ujian online
+  draftFileUrl    String?  // URL dokumen draft
+  
+  penguji1Id      String?
+  penguji1        Dosen?   @relation("Penguji1", fields: [penguji1Id], references: [id])
+  penguji2Id      String?
+  penguji2        Dosen?   @relation("Penguji2", fields: [penguji2Id], references: [id])
+  
+  nilaiPenguji1   Float?
+  nilaiPenguji2   Float?
+  nilaiPembimbing Float?
+  nilaiAkhir      Float?   // Rata-rata berbobot
+  
+  status          String   @default("MENUNGGU") // MENUNGGU, TERJADWAL, SELESAI, LULUS, TIDAK_LULUS
+  catatanRevisi   String?  // Catatan revisi setelah ujian
+  createdAt       DateTime @default(now())
+}
+
+model SkripsiDokumenFinal {
+  id                String   @id @default(uuid())
+  skripsiId         String   @unique
+  skripsi           Skripsi  @relation(fields: [skripsiId], references: [id])
+  fileUrl           String   // URL file skripsi final
+  tanggalUpload     DateTime @default(now())
+  statusValidasi    String   @default("MENUNGGU") // MENUNGGU, DISETUJUI, DITOLAK
+  catatanPustakawan String?  // Catatan dari petugas perpustakaan
+}
+
+// ==========================================
+// MODUL 5: KEUANGAN
+// ==========================================
+model Pembayaran {
+  id            String   @id @default(uuid())
+  tagihanId     String
+  tagihan       Tagihan  @relation(fields: [tagihanId], references: [id])
+  tanggalBayar  DateTime @default(now())
+  jumlahBayar   Float
+  metode        String   // TRANSFER, TUNAI, VA
+  buktiBayar    String?  // URL to file
+  status        String   @default("MENUNGGU_VERIFIKASI") // MENUNGGU_VERIFIKASI, DISUKSES, DITOLAK
+  catatan       String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Beasiswa {
+  id            String   @id @default(uuid())
+  mahasiswaId   String
+  mahasiswa     Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  namaBeasiswa  String
+  tahunAkademikId String
+  tahunAkademik TahunAkademik @relation(fields: [tahunAkademikId], references: [id])
+  potonganPersen Float?
+  nominal       Float?
+}
+
+// ==========================================
+// MODUL 6: KELULUSAN & ALUMNI
+// ==========================================
+model Yudisium {
+  id              String   @id @default(uuid())
+  mahasiswaId     String   @unique
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  tanggalYudisium DateTime
+  nomorSK         String
+  ipkLulus        Float
+  status          String   @default("LULUS") // LULUS, CUMLAUDE
+}
+
+model SKPI {
+  id              String   @id @default(uuid())
+  mahasiswaId     String
+  mahasiswa       Mahasiswa @relation(fields: [mahasiswaId], references: [id])
+  poinPrestasi    String
+  deskripsi       String?
+}
+
+model TracerStudy {
+  id              String   @id @default(uuid())
+  alumniId        String   @unique
+  alumni          Alumni   @relation(fields: [alumniId], references: [id])
+  statusPekerjaan String   // BEKERJA, MENCARI_KERJA, WIRASWASTA, STUDI_LANJUT
+  namaInstansi    String?
+  gaji            String?
+  keselarasanBidang String? // SANGAT_SELARAS, SELARAS, KURANG_SELARAS
+}
+
+// ==========================================
+// MODUL 7: KOMUNIKASI & EVALUASI
+// ==========================================
+model Pengumuman {
+  id          String   @id @default(uuid())
+  judul       String
+  konten      String
+  targetRole  String?  // MAHASISWA, DOSEN, SEMUA
+  aktif       Boolean  @default(true)
+  tanggalDibuat DateTime @default(now())
+}
+
+model Pesan {
+  id          String   @id @default(uuid())
+  pengirimId  String
+  pengirim    User     @relation("Pengirim", fields: [pengirimId], references: [id])
+  penerimaId  String
+  penerima    User     @relation("Penerima", fields: [penerimaId], references: [id])
+  judul       String
+  konten      String
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+}
+
+model KuesionerEdom {
+  id              String   @id @default(uuid())
+  mahasiswaId     String?  // Can be null if fully anonymous, but we keep it optional
+  mahasiswa       Mahasiswa? @relation(fields: [mahasiswaId], references: [id])
+  dosenId         String
+  dosen           Dosen     @relation(fields: [dosenId], references: [id])
+  mataKuliahId    String
+  mataKuliah      MataKuliah @relation(fields: [mataKuliahId], references: [id])
+  skorPelayanan   Int       // 1-5
+  skorMateri      Int       // 1-5
+  saran           String?
+  createdAt       DateTime  @default(now())
+}
