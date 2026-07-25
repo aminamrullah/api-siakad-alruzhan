@@ -15,7 +15,7 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
 
   app.enableCors({
-    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3002', 'http://localhost:3001', 'http://localhost:3000', 'https://alruzhan.amrullah.my.id'],
+    origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3002', 'http://localhost:3001', 'http://localhost:3000', 'https://alruzhan.pospoinplus.com'],
   }); // Mengizinkan akses dari frontend tertentu
   await app.listen(process.env.PORT ?? 4000);
 }
